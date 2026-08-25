@@ -4,6 +4,6 @@
     "sourceMap": false
   },
   // seed.ts dahil edilir: container ilk acilista referans veriyi yazabilsin.
-  "include": ["src/**/*.ts", "prisma/seed.ts"],
+  "include": ["src/**/*.ts", "prisma/seed.ts", "prisma/deploy.ts"],
   "exclude": ["node_modules", "dist", "test"]
 }

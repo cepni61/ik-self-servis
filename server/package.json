@@ -14,7 +14,7 @@
     "db:reset": "prisma db push --force-reset && npm run db:seed",
     "db:seed": "tsx prisma/seed.ts",
     "test": "node --test --import tsx test/api.test.ts test/admin.test.ts",
-    "db:deploy": "prisma db push --skip-generate"
+    "db:deploy": "tsx prisma/deploy.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.3.0",

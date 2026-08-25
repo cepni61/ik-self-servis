@@ -25,15 +25,24 @@ Takım aynı kurum ağındaysa en pratik yol. Ekstra altyapı gerekmez.
 npm run gen:secret
 
 # 2) server/.env.production dosyasını oluştur (aşağıdaki şablon)
-# 3) Derle + veritabanını hazırla
-npm run build
-cd server
-$env:NODE_ENV="production"; npx prisma db push --skip-generate   # PowerShell
-node dist/prisma/seed.js
 
-# 4) Başlat
-npm start        # repo kökünden
+# 3) Derle
+npm run build
+
+# 4) Veritabanı: şema + referans veri
+cd server
+$env:NODE_ENV="production"; node dist/prisma/deploy.js   # PowerShell
+cd ..
+
+# 5) Başlat
+npm start
 ```
+
+> **`npx prisma db push` komutunu doğrudan çalıştırmayın.** Prisma CLI yalnızca
+> `.env` dosyasını okur, `.env.production`'ı bilmez — sessizce **geliştirme
+> veritabanına** bağlanır, "already in sync" der ve uygulama boş bir veritabanıyla
+> açılır. `deploy.js` doğru ortam dosyasını yükleyip hangi veritabanına
+> yazdığını ekrana basar.
 
 `server/.env.production` şablonu:
 
