@@ -1,0 +1,653 @@
+// HR Self Servis - veri modeli
+// Ayrim: Workflow Definition -> Version -> Step -> Action  (tasarim)
+//        Workflow Instance  -> StepInstance -> ActionLog -> AuditEvent  (calisan kayit)
+//
+// NOT: provider sqlite (dev). Enum ve native Json kullanilmadi; boylece sema
+// PostgreSQL / SQL Server'a tasinabilir kaliyor. Kod tarafinda TS union tipleri
+// ve seed edilen referans tablolari (StatusDefinition, PriorityDefinition) ile
+// dogrulama yapilir.
+
+generator client {
+  provider = "prisma-client-js"
+  // Docker / Linux sunucuda da calisabilmesi icin engine hedefleri.
+  // "native" gelistirme makinesi (Windows) icindir.
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Kimlik / Dizin
+// ---------------------------------------------------------------------------
+
+model User {
+  id             String  @id @default(cuid())
+  employeeNo     String? @unique
+  email          String  @unique
+  username       String  @unique
+  displayName    String
+  firstName      String?
+  lastName       String?
+  department     String?
+  departmentCode String?
+  title          String?
+  managerId      String?
+  isActive       Boolean @default(true)
+
+  // Yerel/dev giris icin. Kurumsal ortamda OIDC (Entra ID) kullanilir.
+  passwordHash String?
+  externalId   String? // Entra ID objectId
+  source       String  @default("SEED") // SEED | DIRECTORY | MANUAL
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  manager User?  @relation("UserManager", fields: [managerId], references: [id])
+  reports User[] @relation("UserManager")
+
+  roles  UserRole[]
+  groups UserGroupMember[]
+
+  requestsRequested Request[]           @relation("RequestRequester")
+  requestsAssigned  Request[]           @relation("RequestAssignee")
+  stepInstances     StepInstance[]      @relation("StepAssignee")
+  actionLogs        WorkflowActionLog[] @relation("ActionPerformer")
+  comments          Comment[]
+  attachments       Attachment[]
+  notifications     Notification[]
+  adminOverrides    AdminOverride[]     @relation("OverrideAdmin")
+
+  @@index([managerId])
+  @@index([departmentCode])
+}
+
+model Role {
+  code        String  @id // EMPLOYEE | MANAGER | HR_USER | HR_PROCESS_OWNER | ADMIN
+  name        String
+  description String?
+  isSystem    Boolean @default(true)
+  sortOrder   Int     @default(0)
+
+  users UserRole[]
+}
+
+model UserRole {
+  userId     String
+  roleCode   String
+  assignedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleCode], references: [code], onDelete: Cascade)
+
+  @@id([userId, roleCode])
+  @@index([roleCode])
+}
+
+// "Belirli Grup" tipi adim sorumlusu icin (or. IK Operasyon Ekibi)
+model UserGroup {
+  id          String  @id @default(cuid())
+  code        String  @unique
+  name        String
+  description String?
+  isActive    Boolean @default(true)
+
+  members UserGroupMember[]
+}
+
+model UserGroupMember {
+  groupId String
+  userId  String
+
+  group UserGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, userId])
+}
+
+// ---------------------------------------------------------------------------
+// Referans / konfigurasyon
+// ---------------------------------------------------------------------------
+
+model StatusDefinition {
+  code               String  @id
+  name               String // TR etiket
+  description        String?
+  phase              String  @default("OPEN") // OPEN | CLOSED
+  isTerminal         Boolean @default(false)
+  allowAdminOverride Boolean @default(false) // admin override ile secilebilir mi
+  tone               String  @default("neutral") // UI ipucu
+  sortOrder          Int     @default(0)
+  isActive           Boolean @default(true)
+}
+
+model PriorityDefinition {
+  code      String  @id // LOW | MEDIUM | HIGH
+  name      String
+  tone      String  @default("neutral")
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+}
+
+model AppSetting {
+  key         String   @id
+  value       String
+  valueType   String   @default("string") // string | number | boolean | json
+  category    String? // SLA | NOTIFICATION | SECURITY | GENERAL
+  description String?
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+}
+
+// SLA is gunu hesabi icin. Business Decision Required: resmi tatil listesi kurum
+// tarafindan doldurulur; bos ise takvim gunu modu kullanilir.
+model Holiday {
+  id      String   @id @default(cuid())
+  date    DateTime
+  name    String
+  country String   @default("TR")
+
+  @@unique([date, country])
+}
+
+// ---------------------------------------------------------------------------
+// Talep kategorileri ve form konfigurasyonu
+// ---------------------------------------------------------------------------
+
+model RequestCategory {
+  id          String  @id @default(cuid())
+  code        String  @unique
+  name        String
+  description String?
+  isActive    Boolean @default(true)
+  sortOrder   Int     @default(0)
+
+  // Routing davranisi: hard-code degil, konfigurasyon
+  requiresManagerApproval Boolean @default(false)
+  defaultPriority         String  @default("MEDIUM")
+  defaultSlaHours         Int?
+  ownerRoleCode           String? // talebi hangi IK rolu karsilar
+  ownerGroupId            String?
+  requestNoPrefix         String?
+
+  workflowDefinitionId String?
+  workflowDefinition   WorkflowDefinition? @relation(fields: [workflowDefinitionId], references: [id])
+
+  formFields CategoryFormField[]
+  requests   Request[]
+
+  @@index([workflowDefinitionId])
+}
+
+model CategoryFormField {
+  id         String @id @default(cuid())
+  categoryId String
+  key        String
+  label      String
+  fieldType  String // TEXT|LONG_TEXT|NUMBER|DATE|DROPDOWN|MULTI_SELECT|USER|FILE|CHECKBOX
+
+  isRequired   Boolean @default(false)
+  isReadOnly   Boolean @default(false)
+  isHidden     Boolean @default(false)
+  defaultValue String?
+  helpText     String?
+  placeholder  String?
+
+  optionsJson             String? // [{ "value": "...", "label": "..." }]
+  validationJson          String? // { min, max, minLength, maxLength, pattern }
+  visibilityConditionJson String? // ConditionGroup
+
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  category RequestCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, key])
+  @@index([categoryId])
+}
+
+// ---------------------------------------------------------------------------
+// Workflow tasarimi (definition / version / step / action)
+// ---------------------------------------------------------------------------
+
+model WorkflowDefinition {
+  id          String  @id @default(cuid())
+  code        String  @unique
+  name        String
+  description String?
+  status      String  @default("DRAFT") // DRAFT | ACTIVE | INACTIVE | ARCHIVED
+
+  activeVersionId String?          @unique
+  activeVersion   WorkflowVersion? @relation("ActiveVersion", fields: [activeVersionId], references: [id])
+
+  createdAt   DateTime  @default(now())
+  createdById String?
+  updatedAt   DateTime  @updatedAt
+  updatedById String?
+  isArchived  Boolean   @default(false)
+  archivedAt  DateTime?
+
+  versions   WorkflowVersion[]  @relation("DefinitionVersions")
+  categories RequestCategory[]
+  instances  WorkflowInstance[]
+}
+
+model WorkflowVersion {
+  id            String @id @default(cuid())
+  definitionId  String
+  versionNumber Int
+  status        String @default("DRAFT") // DRAFT | ACTIVE | SUPERSEDED | ARCHIVED
+
+  changeDescription String?
+  createdAt         DateTime  @default(now())
+  createdById       String?
+  publishedAt       DateTime?
+  publishedById     String?
+  archivedAt        DateTime?
+  rowVersion        Int       @default(1)
+
+  // SLA takvim modu - Business Decision Required, bu yuzden konfigurasyon
+  slaCalendarMode String @default("CALENDAR_DAYS") // CALENDAR_DAYS | BUSINESS_DAYS
+
+  definition WorkflowDefinition  @relation("DefinitionVersions", fields: [definitionId], references: [id], onDelete: Cascade)
+  activeFor  WorkflowDefinition? @relation("ActiveVersion")
+
+  steps             WorkflowStep[]
+  notificationRules NotificationRule[]
+  instances         WorkflowInstance[]
+
+  @@unique([definitionId, versionNumber])
+  @@index([definitionId])
+}
+
+model WorkflowStep {
+  id          String  @id @default(cuid())
+  versionId   String
+  code        String
+  name        String
+  description String?
+  type        String // START | APPROVAL | REVIEW | TASK | END
+  sequence    Int
+
+  assigneeType     String // REQUESTER | REQUESTER_MANAGER | HR_USER | HR_PROCESS_OWNER | ROLE | GROUP | USER
+  assigneeRoleCode String?
+  assigneeGroupId  String?
+  assigneeUserId   String?
+
+  // Adim aktifken talebin gorunen durumu
+  statusCode String
+
+  slaEnabled         Boolean @default(false)
+  slaHours           Int?
+  slaReminderHours   Int?
+  slaEscalationHours Int?
+
+  // Basit, yapilandirilmis kosul (arbitrary kod YOK)
+  conditionJson String?
+
+  isActive Boolean @default(true)
+
+  version         WorkflowVersion  @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  actions         WorkflowAction[] @relation("StepActions")
+  incomingActions WorkflowAction[] @relation("ActionTargetStep")
+  stepInstances   StepInstance[]
+
+  @@unique([versionId, code])
+  @@index([versionId, sequence])
+}
+
+model WorkflowAction {
+  id     String @id @default(cuid())
+  stepId String
+  code   String
+  name   String
+  kind   String // SUBMIT | APPROVE | REJECT | REQUEST_INFO | COMPLETE | CANCEL | FORWARD
+
+  targetStepMode   String  @default("NEXT") // NEXT | SPECIFIC | END | STAY | REQUESTER
+  targetStepId     String?
+  targetStatusCode String?
+
+  commentRequired      Boolean @default(false)
+  confirmationRequired Boolean @default(false)
+  notify               Boolean @default(true)
+  notifyRolesJson      String?
+
+  variant   String  @default("DEFAULT") // PRIMARY | DANGER | DEFAULT (UI ipucu)
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  step       WorkflowStep  @relation("StepActions", fields: [stepId], references: [id], onDelete: Cascade)
+  targetStep WorkflowStep? @relation("ActionTargetStep", fields: [targetStepId], references: [id])
+
+  @@unique([stepId, code])
+  @@index([stepId])
+}
+
+model NotificationRule {
+  id        String @id @default(cuid())
+  versionId String
+  event     String // STEP_STARTED | APPROVED | REJECTED | ROUTED_TO_HR | COMPLETED | SLA_WARNING | SLA_BREACH | ADMIN_OVERRIDE
+
+  recipientType     String // REQUESTER | CURRENT_ASSIGNEE | REQUESTER_MANAGER | ROLE | GROUP
+  recipientRoleCode String?
+  recipientGroupId  String?
+
+  channel  String  @default("IN_APP") // IN_APP | EMAIL | TEAMS
+  isActive Boolean @default(true)
+
+  version WorkflowVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([versionId, event])
+}
+
+// ---------------------------------------------------------------------------
+// Calisan kayitlar (runtime)
+// ---------------------------------------------------------------------------
+
+model Request {
+  id          String    @id @default(cuid())
+  requestNo   String    @unique
+  categoryId  String
+  subject     String
+  description String?
+  priority    String    @default("MEDIUM")
+  dueDate     DateTime?
+  statusCode  String    @default("DRAFT")
+
+  requesterId         String
+  requesterDepartment String?
+  requesterTitle      String?
+  requesterManagerId  String? // submit aninda alinan snapshot
+
+  formDataJson String?
+
+  // Denormalize gosterim/sorgu alanlari (transition ile ayni transaction'da guncellenir).
+  // "Su anda kimde?" sorusunun cevabi ve gorev kutusu sorgulari bunlarla calisir.
+  currentAssigneeId        String?
+  currentAssigneeRoleCode  String?
+  currentAssigneeGroupId   String?
+  currentAssigneeLabel     String?
+  currentStepInstanceId    String?
+  currentStepCode          String?
+  currentStepName          String?
+  currentStepSequence      Int?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  submittedAt     DateTime?
+  firstResponseAt DateTime?
+  completedAt     DateTime?
+  closedAt        DateTime?
+
+  slaDueAt  DateTime?
+  slaStatus String    @default("NA") // NA | ON_TRACK | AT_RISK | BREACHED | MET | MISSED
+
+  rowVersion Int       @default(1)
+  isArchived Boolean   @default(false)
+  archivedAt DateTime?
+
+  category        RequestCategory   @relation(fields: [categoryId], references: [id])
+  requester       User              @relation("RequestRequester", fields: [requesterId], references: [id])
+  currentAssignee User?             @relation("RequestAssignee", fields: [currentAssigneeId], references: [id])
+  instance        WorkflowInstance?
+
+  attachments Attachment[]
+  comments    Comment[]
+  auditEvents AuditEvent[]
+  overrides   AdminOverride[]
+
+  @@index([requesterId, statusCode])
+  @@index([currentAssigneeId, statusCode])
+  @@index([currentAssigneeRoleCode, statusCode])
+  @@index([categoryId])
+  @@index([statusCode])
+  @@index([createdAt])
+}
+
+model WorkflowInstance {
+  id           String @id @default(cuid())
+  requestId    String @unique
+  definitionId String
+  versionId    String
+  status       String @default("RUNNING") // RUNNING | COMPLETED | CANCELLED | REJECTED
+
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  rowVersion  Int       @default(1)
+
+  request    Request            @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  definition WorkflowDefinition @relation(fields: [definitionId], references: [id])
+  version    WorkflowVersion    @relation(fields: [versionId], references: [id])
+
+  stepInstances StepInstance[]
+  actionLogs    WorkflowActionLog[]
+  overrides     AdminOverride[]
+
+  @@index([versionId])
+  @@index([status])
+}
+
+model StepInstance {
+  id         String @id @default(cuid())
+  instanceId String
+  stepId     String
+
+  // Snapshot: workflow version arsivlense bile timeline okunabilir kalir
+  stepCode String
+  stepName String
+  stepType String
+  sequence Int
+
+  status        String  @default("PENDING") // PENDING | ACTIVE | COMPLETED | SKIPPED | CANCELLED
+  assigneeId    String?
+  assigneeType  String?
+  assigneeLabel String?
+  // Havuz gorevlerinde (assigneeId null) yetki kontrolu icin cozumlenmis rol/grup.
+  assigneeRoleCode String?
+  assigneeGroupId  String?
+  statusCode    String?
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  dueAt       DateTime?
+
+  slaStatus           String    @default("NA")
+  slaReminderSentAt   DateTime?
+  slaEscalationSentAt DateTime?
+
+  completedById    String?
+  resultActionCode String?
+  resultComment    String?
+  skipReason       String?
+
+  // "Ek Bilgi Iste" ile talep sahibine donuldugunde, bilgi geldiginde adimin
+  // geri atanacagi sorumlu burada saklanir. Adim kapanmaz, askiya alinir.
+  pendingInfoReturnAssigneeId String?
+  pendingInfoRequestedAt      DateTime?
+
+  isCurrent Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  instance WorkflowInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  step     WorkflowStep     @relation(fields: [stepId], references: [id])
+  assignee User?            @relation("StepAssignee", fields: [assigneeId], references: [id])
+
+  actionLogs WorkflowActionLog[]
+
+  @@index([instanceId, sequence])
+  @@index([assigneeId, status])
+  @@index([isCurrent])
+}
+
+// Uygulanan is aksiyonu. idempotencyKey duplicate submit/approve'u DB seviyesinde engeller.
+model WorkflowActionLog {
+  id             String  @id @default(cuid())
+  instanceId     String
+  requestId      String
+  stepInstanceId String?
+
+  actionCode String
+  actionKind String
+  actionName String?
+
+  performedById   String
+  performedByRole String?
+  comment         String?
+
+  fromStatusCode String?
+  toStatusCode   String?
+  fromStepId     String?
+  toStepId       String?
+  fromStepName   String?
+  toStepName     String?
+
+  idempotencyKey String
+  createdAt      DateTime @default(now())
+
+  instance     WorkflowInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  stepInstance StepInstance?    @relation(fields: [stepInstanceId], references: [id])
+  performedBy  User             @relation("ActionPerformer", fields: [performedById], references: [id])
+
+  @@unique([instanceId, idempotencyKey])
+  @@index([requestId, createdAt])
+}
+
+// Append-only. Guncelleme/silme API'si YOK.
+model AuditEvent {
+  id         String  @id @default(cuid())
+  requestId  String?
+  instanceId String?
+  eventType  String
+
+  userId          String?
+  userDisplayName String?
+  userRole        String?
+  occurredAt      DateTime @default(now())
+
+  stepInstanceId        String?
+  stepName              String?
+  workflowVersionId     String?
+  workflowVersionNumber Int?
+
+  fieldName     String?
+  oldValue      String?
+  newValue      String?
+  oldStatusCode String?
+  newStatusCode String?
+
+  description  String?
+  visibility   String  @default("USER") // USER (timeline) | ADMIN (yalnizca admin audit)
+  metadataJson String?
+  ipAddress    String?
+
+  request Request? @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId, occurredAt])
+  @@index([eventType])
+  @@index([userId])
+}
+
+model Attachment {
+  id             String  @id @default(cuid())
+  requestId      String
+  stepInstanceId String?
+
+  fileName   String
+  storedName String
+  mimeType   String
+  sizeBytes  Int
+  checksum   String?
+
+  uploadedById String
+  uploadedAt   DateTime @default(now())
+
+  isDeleted   Boolean   @default(false)
+  deletedAt   DateTime?
+  deletedById String?
+
+  request    Request @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  uploadedBy User    @relation(fields: [uploadedById], references: [id])
+
+  @@index([requestId])
+}
+
+model Comment {
+  id             String  @id @default(cuid())
+  requestId      String
+  stepInstanceId String?
+  authorId       String
+  body           String
+  isInternal     Boolean @default(false) // true ise talep sahibine gosterilmez
+
+  createdAt DateTime  @default(now())
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+
+  request Request @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  author  User    @relation(fields: [authorId], references: [id])
+
+  @@index([requestId, createdAt])
+}
+
+model Notification {
+  id        String  @id @default(cuid())
+  userId    String
+  requestId String?
+  event     String
+  title     String
+  body      String?
+  channel   String  @default("IN_APP")
+
+  isRead Boolean   @default(false)
+  readAt DateTime?
+
+  status       String    @default("SENT") // PENDING | SENT | FAILED
+  errorMessage String?
+  createdAt    DateTime  @default(now())
+  sentAt       DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
+}
+
+// Admin Live Operations mudahalesi. Normal status update DEGIL, ayri business action.
+model AdminOverride {
+  id           String @id @default(cuid())
+  requestId    String
+  instanceId   String
+  overrideType String // REASSIGN | SKIP_STEP | MOVE_TO_STEP | CHANGE_STATUS
+
+  reasonCode String
+  reasonNote String?
+
+  fromStepId     String?
+  fromStepName   String?
+  toStepId       String?
+  toStepName     String?
+  fromStatusCode String?
+  toStatusCode   String?
+  fromAssigneeId String?
+  toAssigneeId   String?
+
+  workflowVersionId     String
+  workflowVersionNumber Int?
+
+  adminUserId String
+  createdAt   DateTime @default(now())
+  impactJson  String?
+
+  request   Request          @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  instance  WorkflowInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  adminUser User             @relation("OverrideAdmin", fields: [adminUserId], references: [id])
+
+  @@index([requestId, createdAt])
+}
+
+// Talep numarasi sayaci (or. key = "PKT-2026")
+model RequestSequence {
+  key       String @id
+  lastValue Int    @default(0)
+}

@@ -1,0 +1,35 @@
+# İK Self Servis - test/dağıtım
+#
+# Kullanım:
+#   1) .env dosyası oluştur:  echo "JWT_SECRET=$(openssl rand -base64 48)" > .env
+#   2) docker compose up -d --build
+#   3) http://<sunucu-ip>:4000
+#
+# Veri kalıcılığı: hrss-data volume'ünde (veritabanı + yüklenen dosyalar).
+
+services:
+  app:
+    build: .
+    image: hrss:latest
+    container_name: hrss
+    restart: unless-stopped
+    ports:
+      - '${PORT:-4000}:4000'
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      # ZORUNLU - .env dosyasından gelir. Boşsa uygulama açılmaz.
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET tanimlanmali. Uretmek icin: openssl rand -base64 48}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      DATABASE_URL: file:/data/prod.db
+      STORAGE_DIR: /data/storage
+      WEB_DIST_DIR: /app/web/dist
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      SLA_JOB_INTERVAL_MINUTES: ${SLA_JOB_INTERVAL_MINUTES:-15}
+      # Parolasız giriş production'da kullanılamaz; uygulama açılmaz.
+      ALLOW_DEV_LOGIN: 'false'
+    volumes:
+      - hrss-data:/data
+
+volumes:
+  hrss-data:

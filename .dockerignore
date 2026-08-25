@@ -1,0 +1,14 @@
+node_modules
+**/node_modules
+**/dist
+.git
+.gitignore
+*.md
+!README.md
+server/.env
+server/prisma/*.db
+server/prisma/*.db-journal
+server/storage
+server/storage-test*
+web/tsconfig.tsbuildinfo
+**/*.tsbuildinfo

@@ -1,0 +1,24 @@
+node_modules/
+dist/
+build/
+# Ortam dosyalari ASLA depoya girmez (JWT secret, DB baglantisi, parolalar).
+# Yalnizca .env*.example dosyalari izlenir.
+.env
+.env.*
+!.env*.example
+*.log
+*.tsbuildinfo
+server/prisma/*.db
+server/prisma/*.db-journal
+server/storage/
+coverage/
+.DS_Store
+
+# Test veritabanlari isletim sistemi gecici dizininde tutulur; yine de
+# eski kosulardan kalan dosyalar icin:
+server/prisma/test-*.db
+*.tsbuildinfo
+
+# Arayuzden indirilen rapor ciktilari (test artefakti)
+ik-talep-raporu-*.csv
+hr-talep-raporu-*.csv
