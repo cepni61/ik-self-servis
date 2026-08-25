@@ -57,6 +57,7 @@ import {
   type EngineActor,
 } from './workflow-engine';
 import { tryParseJson } from '../lib/json';
+import { containsInsensitive } from '../lib/text-search';
 
 function assertAdmin(user: AuthUser): void {
   if (!isAdmin(user)) {
@@ -101,7 +102,7 @@ export async function listLiveInstances(user: AuthUser, filters: LiveOpsFilters)
   }
 
   const requestWhere: Prisma.RequestWhereInput = {};
-  if (filters.requestNo) requestWhere.requestNo = { contains: filters.requestNo.trim() };
+  if (filters.requestNo) requestWhere.requestNo = containsInsensitive(filters.requestNo.trim());
   if (filters.requesterId) requestWhere.requesterId = filters.requesterId;
   if (filters.categoryId) requestWhere.categoryId = filters.categoryId;
   if (filters.statusCode?.length) requestWhere.statusCode = { in: filters.statusCode };
@@ -111,9 +112,9 @@ export async function listLiveInstances(user: AuthUser, filters: LiveOpsFilters)
   if (filters.search?.trim()) {
     const q = filters.search.trim();
     requestWhere.OR = [
-      { requestNo: { contains: q } },
-      { subject: { contains: q } },
-      { requester: { displayName: { contains: q } } },
+      { requestNo: containsInsensitive(q) },
+      { subject: containsInsensitive(q) },
+      { requester: { displayName: containsInsensitive(q) } },
     ];
   }
   if (Object.keys(requestWhere).length > 0) and.push({ request: requestWhere });

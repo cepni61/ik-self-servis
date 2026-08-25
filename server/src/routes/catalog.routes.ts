@@ -19,6 +19,7 @@ import {
 } from '../services/notification.service';
 import { getExportRows, getReportSummary, toCsv } from '../services/report.service';
 import { NotFoundError } from '../domain/errors';
+import { containsInsensitive } from '../lib/text-search';
 
 export const catalogRoutes = Router();
 catalogRoutes.use(requireAuth);
@@ -113,9 +114,9 @@ catalogRoutes.get(
         ...(q.length >= 2
           ? {
               OR: [
-                { displayName: { contains: q } },
-                { email: { contains: q } },
-                { employeeNo: { contains: q } },
+                { displayName: containsInsensitive(q) },
+                { email: containsInsensitive(q) },
+                { employeeNo: containsInsensitive(q) },
               ],
             }
           : {}),

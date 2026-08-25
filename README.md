@@ -67,8 +67,9 @@ oluşturulur; geliştirme verisine dokunulmaz.
 
 Takımla test etmek için: **[DAGITIM.md](DAGITIM.md)**
 
-Üç yol var — kendi makinenden ağa açmak (en hızlı), GitHub üzerinden kod
-paylaşımı, veya kurum içi test sunucusu (Docker hazır).
+Dört yol var — **Render + Neon ile ücretsiz public URL** (`render.yaml` hazır),
+kendi makinenden ağa açmak, GitHub üzerinden kod paylaşımı, veya kurum içi test
+sunucusu (Docker hazır).
 
 Production modunda arayüz **API ile aynı port** üzerinden servis edilir; ikinci
 bir servise veya ters proxy'ye gerek yoktur:

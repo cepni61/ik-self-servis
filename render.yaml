@@ -1,0 +1,87 @@
+# Render Blueprint — İK Self Servis
+#
+# Kullanım:
+#   1) Neon'da (veya Render Postgres) bir PostgreSQL veritabanı oluştur,
+#      connection string'i kopyala.
+#   2) Render → New → Blueprint → bu repo'yu seç.
+#   3) Sorulan iki değeri gir: DATABASE_URL ve SEED_PASSWORD.
+#   4) Deploy. Arayüz + API tek adresten servis edilir.
+#
+# NOT: Ücretsiz kademede disk KALICI DEĞİLDİR.
+#   - Veritabanı: PostgreSQL (harici) → kalıcı ✓
+#   - Yüklenen ek dosyalar: konteyner diskinde → yeniden başlatmada SİLİNİR ✗
+#   Ek dosyaların da kalıcı olması gerekiyorsa disk eklenmeli (ücretli) veya
+#   nesne depolama (S3/Azure Blob) entegre edilmeli.
+
+services:
+  - type: web
+    name: ik-self-servis
+    runtime: node
+    plan: free
+    region: frankfurt
+    branch: main
+    autoDeploy: true
+
+    # devDependencies gerekli: prisma CLI (şema uygulama) ve tsc (derleme).
+    buildCommand: >-
+      npm ci --include=dev &&
+      node scripts/prepare-schema.mjs &&
+      npx prisma generate --schema server/prisma/schema.prisma &&
+      npm run build
+
+    # deploy.js şemayı uygular ve referans veriyi yazar (idempotent),
+    # ardından sunucu başlar.
+    startCommand: >-
+      cd server &&
+      node dist/prisma/deploy.js &&
+      node dist/src/index.js
+
+    healthCheckPath: /api/health
+
+    envVars:
+      # Node surumu acikca sabitlenir (yerelde de 22 kullaniliyor).
+      - key: NODE_VERSION
+        value: '22'
+
+      - key: NODE_ENV
+        value: production
+
+      # Prisma datasource provider'ı build sırasında bu değere göre ayarlanır.
+      - key: DATABASE_PROVIDER
+        value: postgresql
+
+      # Neon / Render Postgres connection string. Blueprint kurulumunda sorulur.
+      # Neon için sonuna ?sslmode=require eklenmeli.
+      - key: DATABASE_URL
+        sync: false
+
+      # JWT imzalama anahtarı — Render rastgele üretir, kimse görmez.
+      - key: JWT_SECRET
+        generateValue: true
+
+      - key: JWT_EXPIRES_IN
+        value: 8h
+
+      # Örnek kullanıcılar oluşturulsun mu? Ekip testi için gerekli.
+      # GERÇEK PERSONEL VERİSİ GİRİLMEMELİDİR.
+      - key: DEMO_MODE
+        value: 'true'
+
+      # Örnek kullanıcıların ortak parolası. Blueprint kurulumunda sorulur.
+      # Public bir adres olduğu için TAHMİN EDİLEMEZ bir değer seçin;
+      # uygulama varsayılan parolayı reddeder.
+      - key: SEED_PASSWORD
+        sync: false
+
+      # Parolasız giriş: production'da uygulama bununla açılmaz.
+      - key: ALLOW_DEV_LOGIN
+        value: 'false'
+
+      - key: STORAGE_DIR
+        value: /tmp/hrss-storage
+
+      - key: LOG_LEVEL
+        value: info
+
+      - key: SLA_JOB_INTERVAL_MINUTES
+        value: '15'

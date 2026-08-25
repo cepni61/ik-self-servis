@@ -9,9 +9,11 @@
 
 generator client {
   provider = "prisma-client-js"
-  // Docker / Linux sunucuda da calisabilmesi icin engine hedefleri.
-  // "native" gelistirme makinesi (Windows) icindir.
-  binaryTargets = ["native", "debian-openssl-3.0.x"]
+  // Yalnizca "native": engine, generate'in KOSTUGU platform icin uretilir.
+  // Docker imaji Linux konteyner icinde build edildigi icin orada da dogru
+  // engine olusur. Ek hedef eklemek, kurumsal TLS arkasinda gereksiz bir
+  // indirme denemesine ve "self-signed certificate" hatasina yol aciyor.
+  binaryTargets = ["native"]
 }
 
 datasource db {

@@ -6,6 +6,7 @@
 // ONEMLI: ortam dosyasi diger her seyden once yuklenmeli.
 import './load-env';
 
+import fs from 'node:fs';
 import path from 'node:path';
 
 function required(key: string, fallbackForDev?: string): string {
@@ -34,6 +35,26 @@ function optionalBool(key: string, fallback: boolean): boolean {
 
 const nodeEnv = process.env.NODE_ENV ?? 'development';
 const isProduction = nodeEnv === 'production';
+
+/**
+ * Web build ciktisini olasi konumlarda arar.
+ * Ilk gecerli aday secilir; hicbiri yoksa en olasi yol dondurulur (app.ts
+ * dizin yoksa yalnizca API servis eder ve uyari yazar).
+ */
+function resolveWebDistDir(): string {
+  const candidates = [
+    // server/ dizininden calistirildiginda
+    path.resolve(process.cwd(), '..', 'web', 'dist'),
+    // repo kokunden calistirildiginda
+    path.resolve(process.cwd(), 'web', 'dist'),
+    // derlenmis dosyanin konumuna gore (dist/src/config -> repo koku)
+    path.resolve(__dirname, '..', '..', '..', '..', 'web', 'dist'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(path.join(candidate, 'index.html'))) return candidate;
+  }
+  return candidates[0];
+}
 
 export const env = {
   nodeEnv,
@@ -83,10 +104,13 @@ export const env = {
 
   /**
    * Build edilmis web arayuzunun dizini. Production'da API ile ayni port
-   * uzerinden servis edilir. Varsayilan: <repo>/web/dist
+   * uzerinden servis edilir.
+   *
+   * WEB_DIST_DIR verilmezse olasi konumlar sirayla denenir; boylece uygulama
+   * hem server/ hem repo kokunden baslatildiginda arayuzu bulur (bulut
+   * platformlari start komutunu farkli dizinlerden calistirabiliyor).
    */
-  webDistDir:
-    process.env.WEB_DIST_DIR ?? path.resolve(process.cwd(), '..', 'web', 'dist'),
+  webDistDir: process.env.WEB_DIST_DIR ?? resolveWebDistDir(),
 
   /**
    * DEMO MODU.

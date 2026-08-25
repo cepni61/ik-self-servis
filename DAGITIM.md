@@ -130,6 +130,76 @@ kategori/rol/akış isimleri iş süreci bilgisidir.
 
 ---
 
+## Seçenek 2.5 — Render + Neon (ücretsiz public URL) ⭐ hazır
+
+Herkesin her yerden açabileceği bir adres. Firewall, IP, "bilgisayarım açık mı"
+sorunu yok. `render.yaml` deploy edilmeye hazır.
+
+### Neden PostgreSQL
+
+Render'ın ücretsiz kademesinde disk kalıcı değil — SQLite her yeniden başlatmada
+sıfırlanırdı. Şema PostgreSQL'e olduğu gibi geçiyor (`prisma validate` ile
+doğrulandı), veritabanı harici olduğu için veri kalıcı olur.
+
+Provider değişimi `scripts/prepare-schema.mjs` ile build sırasında yapılır —
+**tek şema dosyası** korunur, yerel geliştirme SQLite'ta kalır.
+
+### Adımlar
+
+**1. Neon'da veritabanı** (ücretsiz, kalıcı) — https://neon.tech
+- Sign up → New Project → bölge olarak Frankfurt/Europe seç
+- Connection string'i kopyala; sonuna `?sslmode=require` ekle:
+  ```
+  postgresql://kullanici:parola@ep-xxx.eu-central-1.aws.neon.tech/neondb?sslmode=require
+  ```
+
+**2. Render'da servis** — https://render.com
+- GitHub ile Sign up (depo public, izin gerekmez)
+- **New → Blueprint** → `cepni61/ik-self-servis` deposunu seç
+- Render `render.yaml`'ı okur ve iki değer sorar:
+
+  | Değişken | Ne girilecek |
+  | --- | --- |
+  | `DATABASE_URL` | Neon connection string (1. adım) |
+  | `SEED_PASSWORD` | Örnek kullanıcıların ortak parolası — **tahmin edilemez** olmalı |
+
+- `JWT_SECRET` otomatik üretilir, kimse görmez.
+- **Apply** → ilk deploy ~3-5 dk.
+
+**3. Adres**
+
+```
+https://ik-self-servis.onrender.com
+```
+
+Kullanıcı adları README'deki tabloyla aynı (`mehmet.ozturk`, `ahmet.yilmaz`,
+`elif.demir`, `zeynep.kaya`, `sistem.yonetici`), parola 2. adımda belirlediğin.
+
+### Ücretsiz kademenin üç sınırı
+
+| Sınır | Etki |
+| --- | --- |
+| 15 dk hareketsizlikte uyur | İlk açılışta ~50 sn bekleme (sonra normal) |
+| Konteyner diski geçici | **Yüklenen ek dosyalar** yeniden başlatmada silinir. Veritabanı (Neon) etkilenmez |
+| Aylık saat kotası | Sürekli trafikte dolabilir |
+
+Ek dosyaların da kalıcı olması gerekiyorsa ya ücretli disk eklenmeli ya da
+nesne depolama (S3 / Azure Blob) entegre edilmeli — şu an dosyalar yerel diske
+yazılıyor.
+
+### ⚠️ Public adres = bilinen parolayla Admin erişimi
+
+Adres internete açık olacak ve `sistem.yonetici` hesabı tam yönetim yetkisine
+sahip. Bu yüzden:
+
+- `SEED_PASSWORD` **tahmin edilemez** olmalı (`IKTest2026` gibi değil)
+- Parola kod deposunda veya public bir yerde paylaşılmamalı
+- **Gerçek personel verisi girilmemeli**
+
+Kalıcı/gerçek kullanım için Entra ID (OIDC) + kurum içi barındırma gerekir.
+
+---
+
 ## Seçenek 3 — Kurum içi test sunucusu (kalıcı adres)
 
 Gerçek bir test ortamı için doğru yol. Docker varsa tek komut:

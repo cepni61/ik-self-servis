@@ -38,6 +38,7 @@ import {
 } from '../domain/errors';
 import { describeRemaining, evaluateSlaStatus } from '../domain/sla';
 import { stringifyJson, tryParseJson } from '../lib/json';
+import { containsInsensitive } from '../lib/text-search';
 import { writeAudit } from './audit.service';
 import { describeStatus, getPriorityMap, getStatusMap } from './catalog.service';
 import { getCategoryFormFields, validateFormData } from './form.service';
@@ -812,7 +813,7 @@ export async function buildFilterWhere(
 
   if (filters.onlyMine) and.push({ requesterId: user.id });
   if (filters.requestNo) {
-    and.push({ requestNo: { contains: filters.requestNo.trim() } });
+    and.push({ requestNo: containsInsensitive(filters.requestNo.trim()) });
   }
   if (filters.categoryId) and.push({ categoryId: filters.categoryId });
   if (filters.categoryCode) and.push({ category: { code: filters.categoryCode } });
@@ -849,10 +850,10 @@ export async function buildFilterWhere(
     const q = filters.search.trim();
     and.push({
       OR: [
-        { requestNo: { contains: q } },
-        { subject: { contains: q } },
-        { description: { contains: q } },
-        { requester: { displayName: { contains: q } } },
+        { requestNo: containsInsensitive(q) },
+        { subject: containsInsensitive(q) },
+        { description: containsInsensitive(q) },
+        { requester: { displayName: containsInsensitive(q) } },
       ],
     });
   }
