@@ -91,7 +91,7 @@ npm start                          # tek port (varsayılan 4000)
 | --- | --- | --- |
 | Backend | Node + Express + TypeScript | Tek dil, hızlı iterasyon |
 | ORM | Prisma | Tip güvenli sorgu + migration |
-| Veritabanı | SQLite (dev) | Şema PostgreSQL / SQL Server'a taşınabilir yazıldı |
+| Veritabanı | SQLite (dev) | Şema PostgreSQL'e olduğu gibi taşınabilir (doğrulandı) |
 | Frontend | React + Vite + TypeScript | — |
 | Stil | Tailwind CSS v4 | Bilgi yoğun, sade arayüz |
 | Veri katmanı (web) | TanStack Query | Mutasyon sonrası tutarlı yenileme |
@@ -99,8 +99,15 @@ npm start                          # tek port (varsayılan 4000)
 
 **Taşınabilirlik notu:** Prisma şemasında `enum` ve native `Json` kullanılmadı; durum/tip
 alanları `String` + TypeScript union + seed edilen referans tabloları (`StatusDefinition`,
-`PriorityDefinition`) ile doğrulanıyor. Kurumsal ortama geçişte `datasource` sağlayıcısını
-değiştirmek yeterlidir.
+`PriorityDefinition`) ile doğrulanıyor.
+
+| Hedef | Durum |
+| --- | --- |
+| **PostgreSQL** | `provider` değiştirmek yeterli — `prisma validate` ile doğrulandı, ek değişiklik gerekmiyor |
+| **SQL Server** | **Şema olduğu gibi geçmiyor.** 33 doğrulama hatası: SQL Server döngüsel/çoklu cascade yollarına izin vermiyor. Şu ilişkilerde bir tarafa açıkça `onDelete: NoAction, onUpdate: NoAction` verilmesi gerekir: `User.manager` (self-relation), `WorkflowDefinition.activeVersion ↔ WorkflowVersion.definition`, ve `WorkflowAction`'a çoklu yoldan gelen cascade'ler. Küçük bir değişiklik ama silme davranışını etkilediği için gerçek bir SQL Server örneğinde test edilmeli. |
+
+> Not: Bu tablo `prisma validate` ile her iki sağlayıcı için fiilen denenerek
+> yazıldı; varsayım değil.
 
 ---
 
