@@ -1,0 +1,15 @@
+# Satir sonlarini normalize et.
+* text=auto
+
+# LF ZORUNLU: bu dosyalar CRLF ile bozulur.
+# docker-entrypoint.sh CRLF olursa container "bad interpreter" ile acilmaz.
+*.sh    text eol=lf
+Dockerfile text eol=lf
+docker-compose.yml text eol=lf
+
+# Kesin ikili dosyalar
+*.png binary
+*.jpg binary
+*.ico binary
+*.pdf binary
+*.db  binary
