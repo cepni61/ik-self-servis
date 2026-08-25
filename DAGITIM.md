@@ -104,9 +104,11 @@ npm run db:reset --workspace server
 npm run dev            # http://localhost:5173
 ```
 
-**Kurumsal ağ engeli:** `npm install` ve Prisma indirmeleri TLS incelemesi
-nedeniyle `SELF_SIGNED_CERT_IN_CHAIN` ile kesilebilir. README'nin sonundaki
-"Kurumsal ağ notu (TLS)" bölümünü paylaşın — iki komutla çözülüyor.
+**Kurumsal ağ engeli — takıma mutlaka iletin:** `git clone`, `npm install` ve
+Prisma indirmeleri kurumsal TLS incelemesi nedeniyle sertifika hatasıyla kesilir.
+README'nin sonundaki **"Kurumsal ağ notu (TLS)"** bölümü üç aracın tamamı için
+çözümü içerir (git + npm + Node). Bu yapılmazsa takım `git clone` adımını dahi
+geçemez.
 
 | Artı | Eksi |
 | --- | --- |

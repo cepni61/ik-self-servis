@@ -282,15 +282,55 @@ değerlerle geldi, iş birimi kararıyla değiştirilmeli.
 - **Toplu işlem:** Admin için toplu statü/atama değişikliği bilinçli olarak yok
   (spec: "kontrolsüz toplu status değişikliği" yasak).
 
-### Kurumsal ağ notu (TLS)
+### Kurumsal ağ notu (TLS) — ilk kurulumda MUTLAKA yapılmalı
 
-Kurumsal TLS incelemesi npm ve Prisma indirmelerini `SELF_SIGNED_CERT_IN_CHAIN` ile
-kesiyordu. Çözüm: Windows güven deposu PEM olarak dışa aktarılıp `npm config set cafile`
-ile tanımlandı (`C:\Users\<kullanıcı>\corp-ca-bundle.pem`). Prisma binary indirmeleri için
-ayrıca şu değişkenin tanımlı olması gerekir:
+Kurumsal TLS incelemesi nedeniyle `git`, `npm` ve Prisma indirmeleri
+`SELF_SIGNED_CERT_IN_CHAIN` / `self-signed certificate in certificate chain`
+hatasıyla kesilir. Üçü de aynı sebepten: araçların kendi sertifika paketinde
+kurumsal ara sertifika yok.
+
+**1. Windows güven deposunu PEM olarak dışa aktar** (PowerShell, tek seferlik):
 
 ```powershell
-[Environment]::SetEnvironmentVariable('NODE_EXTRA_CA_CERTS', "$env:USERPROFILE\corp-ca-bundle.pem", 'User')
+$out = Join-Path $env:USERPROFILE 'corp-ca-bundle.pem'
+$stores = @('Cert:\LocalMachine\Root','Cert:\CurrentUser\Root','Cert:\LocalMachine\CA','Cert:\CurrentUser\CA')
+$sb = New-Object System.Text.StringBuilder; $seen = @{}
+foreach ($s in $stores) {
+  try { $certs = Get-ChildItem $s -ErrorAction Stop } catch { continue }
+  foreach ($c in $certs) {
+    if ($seen.ContainsKey($c.Thumbprint)) { continue }
+    $seen[$c.Thumbprint] = $true
+    [void]$sb.AppendLine("-----BEGIN CERTIFICATE-----")
+    [void]$sb.AppendLine([System.Convert]::ToBase64String($c.RawData,'InsertLineBreaks'))
+    [void]$sb.AppendLine("-----END CERTIFICATE-----")
+  }
+}
+Set-Content -Path $out -Value $sb.ToString() -Encoding ascii
+Write-Output "Olusturuldu: $out"
 ```
 
-Bu ayar yapılmazsa `prisma generate` / `prisma db push` sertifika hatası verir.
+**2. Üç aracın hepsine tanıt:**
+
+```powershell
+$ca = "$env:USERPROFILE\corp-ca-bundle.pem"
+
+# git  -> clone / push icin
+git config --global http.sslCAInfo $ca
+
+# npm  -> npm install icin
+npm config set cafile $ca
+
+# Node -> Prisma binary indirmeleri ve HTTPS istekleri icin
+[Environment]::SetEnvironmentVariable('NODE_EXTRA_CA_CERTS', $ca, 'User')
+```
+
+Son komuttan sonra **terminali yeniden aç** (ortam değişkeni yeni oturumda geçerli olur).
+
+| Ayar yapılmazsa ne olur |
+| --- |
+| `git clone` / `git push` → `self-signed certificate in certificate chain` |
+| `npm install` → `SELF_SIGNED_CERT_IN_CHAIN` |
+| `prisma generate` / `db push` → sertifika hatası |
+
+Geri almak için: `git config --global --unset http.sslCAInfo`,
+`npm config delete cafile`, ortam değişkenini sil.
